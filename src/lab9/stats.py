@@ -61,8 +61,31 @@ def paired_bootstrap(a: Sequence[float], b: Sequence[float], *, n_resamples: int
     """a[i], b[i] = per-item mean over seeds, SAME items, SAME order.
     Return (mean(a)-mean(b), lo, hi) with scipy.stats.bootstrap(paired=True, method="percentile",
     rng=numpy.random.default_rng(rng)). If a == b everywhere return (0.0, 0.0, 0.0)."""
-    # TODO M4
-    raise NotImplementedError
+    import math
+
+    import numpy as np
+    from scipy.stats import bootstrap
+
+    x, y = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    if x.shape != y.shape:
+        raise ValueError(f"paired bootstrap needs the same items: {x.shape} vs {y.shape}")
+    if x.size == 0:
+        raise ValueError("paired bootstrap on 0 items")
+    d = float(x.mean() - y.mean())
+    if np.array_equal(x, y):
+        return 0.0, 0.0, 0.0
+    if np.all(x - y == x[0] - y[0]):          # constant difference: every resample gives d
+        return d, d, d
+
+    def diff(p, q, axis=-1):
+        return np.mean(p, axis=axis) - np.mean(q, axis=axis)
+
+    res = bootstrap((x, y), diff, paired=True, vectorized=True, n_resamples=n_resamples,
+                    confidence_level=confidence, method="percentile", rng=np.random.default_rng(rng))
+    lo, hi = float(res.confidence_interval.low), float(res.confidence_interval.high)
+    if math.isnan(lo) or math.isnan(hi):      # degenerate resample distribution
+        lo = hi = d
+    return d, lo, hi
 
 
 def pass_at_k(n: int, c: int, k: int) -> float:

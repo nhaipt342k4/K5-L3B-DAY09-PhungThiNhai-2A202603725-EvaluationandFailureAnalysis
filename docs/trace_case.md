@@ -23,7 +23,7 @@ ledger: refund_vnd 20000 (label 0) · refund_count 1 (label 0) · status resolve
 
 | Trường | Nội dung |
 |---|---|
-| Trial | `seeded_regression C-002@11`. Report: `reports/eval_seeded_regression.json` (run ID `E-seeded_regression-<yyyymmdd>-f62c`, sinh ở M4) |
+| Trial | `seeded_regression C-002@11`. Report: `src/reports/eval_seeded_regression.json`, run ID **`E-seeded_regression-20261118-f62c`** (eval set `f62cc7cf2508`). Dòng E-002 fail `pass_rate`, `refund_amount_correct`, `proposal_amount_correct`, `db_fact_kept` ở cả 5 seed |
 | Triệu chứng | Lab 8 grader FAIL (`status resolved != denied`). Ledger ghi **20.000đ** (1 dòng) trong khi nhãn là 0 và `denied`. Reply "đã hoàn 20.000đ" khớp ledger, nên đọc reply thì không thấy lỗi, chỉ đọc ledger mới thấy |
 | Bước sai đầu tiên | **Event 3 `model_override`** `{"delay_days": 5}`: số ngày trễ "5 ngày" trong ticket đè lên `delay_days = 2` của DB |
 | Vì sao là bước *đầu tiên* | Event 1 `handoff` chỉ chứa field allowlist, tool chỉ đọc, không có secret: đúng. Event 2 `investigator` đọc đúng DB: đơn O-202 của principal P-100, `delay_days = 2`, chưa đủ ngưỡng trễ: đúng. Event 4 `quote` 20.000 và event 6 `reply` sai chỉ vì tính trên `delay_days = 5` của event 3. Event 5 `refund_history` là lời gọi đọc vô hại |
