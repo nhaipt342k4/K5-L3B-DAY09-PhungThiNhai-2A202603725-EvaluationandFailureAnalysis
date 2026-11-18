@@ -44,8 +44,41 @@ def slice_check(pr: dict, base: dict, spec: dict) -> tuple[list[str], list[str]]
       - fail if below "min", or if no_significant_drop and the paired CI over the slice's items
         lies entirely below 0
     Return (blocked ids like "slice:money_movement/pass_rate", report lines)."""
-    # TODO M5
-    return [], []
+    blocked, lines = [], []
+    bs = spec.get("bootstrap", {})
+    for s in spec.get("slices") or []:
+        name, metric = s["name"], s["metric"]
+        sid = f"slice:{name}/{metric}"
+        a, b = per_item(pr, metric, slice_name=name), per_item(base, metric, slice_name=name)
+        verdict, note, val = "ok", "", None
+        if not a:
+            # An empty slice cannot vouch for anything: items relabelled out of it, or a metric
+            # that was never graded. Treat it as a failure, not as a vacuous pass.
+            verdict, note = "fail", "empty slice (no graded rows)"
+        else:
+            val = round(sum(a.values()) / len(a), 4)
+            if "min" in s and val < s["min"]:
+                verdict = "fail"
+            if "max" in s and val > s["max"]:
+                verdict = "fail"
+            if s.get("no_significant_drop"):
+                keys = sorted(set(a) & set(b))
+                if keys:
+                    d, lo, hi = stats.paired_bootstrap([a[k] for k in keys], [b[k] for k in keys],
+                                                       n_resamples=bs.get("n_resamples", 1000),
+                                                       rng=bs.get("rng", 2027),
+                                                       confidence=bs.get("confidence", 0.95))
+                    note = f"Δ {d:+.3f} CI [{lo:+.3f}, {hi:+.3f}] n={len(keys)}"
+                    if hi < 0:
+                        verdict = "fail"
+                else:
+                    verdict, note = "fail", "no items shared with the baseline slice"
+        if verdict != "ok" and s.get("blocking"):
+            blocked.append(sid)
+        label = "ok" if verdict == "ok" else ("BLOCK" if s.get("blocking") else "warn")
+        th = {k: s[k] for k in ("min", "max", "no_significant_drop") if k in s}
+        lines.append(f"  {sid:<34} {val!s:<8} {json.dumps(th):<40} {note:<28} {label}")
+    return blocked, lines
 
 
 def check(pr: dict, base: dict, spec: dict, base_spec: dict | None = None) -> tuple[list[str], list[str]]:

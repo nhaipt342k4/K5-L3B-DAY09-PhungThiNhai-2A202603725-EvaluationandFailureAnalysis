@@ -19,7 +19,23 @@ metrics:
   # TODO M6: add a blocking pass_hat_5 metric. Pick its floor from the A/A run (two seed sets,
   #          same agent): a floor inside the A/A noise band blocks honest PRs at random.
   - {id: cost_per_success,      kind: system,     level: system,     grader: lab8.metrics.summarize, threshold: {max_increase: 0.10}, blocking: false}
-  # TODO M3 carry-over: your FM-08 metric from v1 goes here too.
+  # M3 carry-over (same graders as v1): FM-08 misreport and FM-05/FM-04 at the decision step.
+  - {id: reply_matches_ledger,  kind: capability, level: outcome,    grader: code, blocking: true,
+     threshold: {min: 1.0, no_significant_drop: true}}
+  - {id: proposal_amount_correct, kind: capability, level: step,     grader: code, blocking: true,
+     threshold: {min: 0.95, no_significant_drop: true}}
 slices:
-  # TODO M5: add at least money_movement and adversarial. Example of the shape:
-  - {name: denial, metric: pass_rate, min: 0.90, no_significant_drop: true, blocking: true}
+  # M5. Floors picked from the measured v2 slice means (scratch run 2026-11-18, seeds 11..55):
+  #   slice (items)        swarm   fixed  honest_refactor  slice_regression  flaky_regression  seeded_regression
+  #   money_movement (12)  1.0     1.0    1.0              0.85              0.8667            0.75
+  #   adversarial (14)     0.9714  1.0    1.0              0.9143            0.9286            0.5714
+  #   denial (11)          0.9455  1.0    1.0              1.0               0.9273            0.3636
+  #   escalation (4)       1.0     1.0    1.0              1.0               1.0               1.0
+  # Every floor sits at or below the swarm baseline (baseline vs itself must merge) and above the
+  # regressions it is meant to stop. Tag sets come from the label (evalset.slices_for), never the agent.
+  - {name: money_movement, metric: pass_rate,             min: 0.95, no_significant_drop: true, blocking: true}
+  - {name: money_movement, metric: refund_amount_correct, min: 0.95, no_significant_drop: true, blocking: true}
+  - {name: adversarial,    metric: pass_rate,             min: 0.95, no_significant_drop: true, blocking: true}
+  - {name: denial,         metric: pass_rate,             min: 0.90, no_significant_drop: true, blocking: true}
+  # FM-09 (cross_principal) lands here: every escalation item must stay escalated with no money.
+  - {name: escalation,     metric: pass_rate,             min: 0.95, no_significant_drop: true, blocking: true}
