@@ -81,6 +81,19 @@ def slice_check(pr: dict, base: dict, spec: dict) -> tuple[list[str], list[str]]
     return blocked, lines
 
 
+def new_failures(pr: dict, base: dict, metric: str, bad_is_true: bool = False) -> list[tuple[str, int]]:
+    """(item_id, seed) trials that were good on the baseline and are bad in the PR.
+    Averages can hide a regression that moves failures around: a PR that breaks E-002@33 while the
+    baseline only fails E-002@55 has the same mean, the same pass^5 and a paired CI of exactly 0.
+    On a deterministic harness (A/A delta = 0) a newly failing trial is a regression, not noise.
+    With a real LLM this rule needs repeated runs per trial before it can block."""
+    bad = (lambda v: v is True) if bad_is_true else (lambda v: v is False)
+    was = {(r["item_id"], r["seed"]): r.get(metric) for r in base["rows"]}
+    return sorted({(r["item_id"], r["seed"]) for r in pr["rows"]
+                   if bad(r.get(metric)) and (r["item_id"], r["seed"]) in was
+                   and was[(r["item_id"], r["seed"])] is not None and not bad(was[(r["item_id"], r["seed"])])})
+
+
 def check(pr: dict, base: dict, spec: dict, base_spec: dict | None = None) -> tuple[list[str], list[str]]:
     if pr["manifest"]["eval_set_sha"] != base["manifest"]["eval_set_sha"]:
         return ["eval_set_sha"], ["  EVAL SET differs from the baseline's: re-run the baseline on the same eval set"]
@@ -109,6 +122,12 @@ def check(pr: dict, base: dict, spec: dict, base_spec: dict | None = None) -> tu
             note = f"Δ {d:+.3f} CI [{lo:+.3f}, {hi:+.3f}]"
             if hi < 0:
                 verdict = "fail"
+        if th.get("no_new_failures") and val is not None:
+            new = new_failures(pr, base, mid, bad_is_true="max" in th)
+            if new:
+                verdict = "fail"
+                shown = ", ".join(f"{i}@{s}" for i, s in new[:3]) + (" …" if len(new) > 3 else "")
+                note = (note + " · " if note else "") + f"{len(new)} new fail: {shown}"
         if verdict != "ok" and m.get("blocking"):
             blocked.append(mid)
         label = {"ok": "ok", "missing": "MISSING"}.get(verdict, "BLOCK" if m.get("blocking") else "warn")

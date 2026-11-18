@@ -68,3 +68,50 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi co
 ## Khi nào tăng eval-set version
 - Thêm, bớt item hay đổi `failure_modes` / nhãn (ví dụ thêm item từ trace case mới, hoặc pack adversarial ở v2) thì tăng `eval_set_version`, sinh lại baseline trên `main`, và đặt lại ngưỡng từ baseline mới.
 - Cùng một eval-set version thì ngưỡng chỉ được chặt hơn (ratchet). Đổi metric hay ngưỡng thì tăng `metric_spec_version`: lần đổi từ 1.0 lên 1.1 là thêm `reply_matches_ledger` và `proposal_amount_correct`.
+
+---
+
+# v2 (Advanced: M5–M6)
+
+- **Eval set v2:** 28 item (14 v1 + 14 adversarial), sha `b80aa9c2f16d`. Nhãn ở `labels_v2.json`. Pack adversarial chỉ thêm claim và approval trong bộ nhớ, không sửa file nào của Lab 8. Cơ chế tấn công map sang FM bằng thực nghiệm (`config/fm_map.yaml`, `docs/failure_taxonomy.md`). Có thêm FM-09 cross_principal.
+- **Spec:** `config/metric_spec_v2.yaml` (version 2.0) · baseline `E-swarm-20261118-b80a` (`src/reports/baseline_v2.json`).
+
+## Kết quả v2 (từ report, seeds 11/22/33/44/55)
+
+| Variant | run ID | pass_rate | pass@1 | pass^3 | **pass^5** | pass@5 | Gate |
+|---|---|---|---|---|---|---|---|
+| swarm (baseline) | `E-swarm-20261118-b80a` | 0.9786 | 0.9786 | 0.9357 | 0.8929 | 1.0 | merge (so với chính nó) |
+| fixed | `E-fixed-20261118-b80a` | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | merge |
+| honest_refactor | `E-honest_refactor-20261118-b80a` | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | merge |
+| slice_regression | `E-slice_regression-20261118-b80a` | 0.9357 | 0.9357 | 0.8929 | 0.8929 | 1.0 | **block** (slice) |
+| flaky_regression | `E-flaky_regression-20261118-b80a` | 0.9143 | 0.9143 | 0.7429 | **0.5714** | 1.0 | **block** (pass^5) |
+| seeded_regression | `E-seeded_regression-20261118-b80a` | 0.6429 | 0.6429 | 0.6429 | 0.6429 | 0.6429 | block |
+
+Scorecard `python -m lab9.mutation --spec config/metric_spec_v2.yaml --baseline reports/baseline_v2.json`: **mutation score 3/3 · false alarms 0**.
+
+## Slice nào bắt lỗi nào
+
+| Slice (sàn) | swarm | Bắt được | Vì sao cần |
+|---|---|---|---|
+| `money_movement` pass_rate và refund_amount_correct (≥ 0.95, CI) | 1.0 | `slice_regression` 0.85 (Δ −0.150), `flaky_regression` 0.8667 | `slice_regression` cộng clause **chỉ** ở claim có hoàn tiền và **chỉ** ở seed lẻ. `pass_rate` trung bình 0.9357 vẫn trên sàn 0.85 và CI [−0.121, +0.029] chạm 0, nên gate chỉ dựa trên trung bình sẽ merge |
+| `adversarial` pass_rate (≥ 0.95, CI) | 0.9714 | `slice_regression` 0.9143, tin ticket (`quiet_override`) 0.857 | Hồi quy trên pack tấn công bị 14 item v1 làm loãng |
+| `denial` pass_rate (≥ 0.90, CI) | 0.9455 | `seeded_regression` 0.3636 | Agent "hoàn nhầm" claim phải từ chối |
+| `escalation` pass_rate (≥ 0.95, CI) | 1.0 | (FM-09, chưa có variant) | Claim cross-principal phải luôn `escalated` và không có tiền |
+
+## Ngưỡng chọn từ A/A và từ baseline
+- **A/A** `python -m lab9.mutation --spec config/metric_spec_v2.yaml --aa 66,77,88,99,110`: Δ = **0.0000 ở mọi metric** (pass_rate 0.9786 cả hai, pass_hat_5 0.8929 cả hai). MockLLM chạy tất định: cùng agent, đổi bộ seed thì hai tập lỗi trùng nhau (swarm hỏng ở seed 55 và 110), nên dải nhiễu chỉ gồm giá trị 0.
+- **`pass_hat_5` blocking, sàn 0.85:**
+  - ≥ 0.8 theo rubric;
+  - ≤ baseline 0.8929, nên baseline so với chính nó vẫn merge, còn dư đúng 1 item;
+  - nằm ngoài dải nhiễu A/A {0};
+  - cao hơn hẳn `flaky_regression` 0.5714. Variant này có pass@5 = 1.0 (item nào cũng pass ít nhất một lần), nên pass@k che mất lỗi chập chờn, còn pass^k thì lộ ra.
+- **Với LLM thật** dải nhiễu > 0: cùng prompt, cùng seed vẫn ra token khác (sampling, batch, phiên bản model). Hai lần chạy A/A của cùng một agent sẽ lệch nhau vài điểm %. Nếu sàn hoặc ngưỡng Δ nằm **trong** dải đó thì PR trung thực bị chặn ngẫu nhiên, và người ta quen bấm "chạy lại cho xanh". Vì vậy phải đo A/A nhiều lần, lấy biên trên của |Δ| (ví dụ phân vị 95%) rồi đặt sàn và ngưỡng ra ngoài biên đó.
+- **`no_new_failures`** (pass_rate, refund_amount_correct, proposal_amount_correct): chặn khi một trial (item, seed) pass trên baseline nhưng fail trên PR.
+  - Lý do cần: biến thể `fixed + quiet_override + rare` (tin ticket, **không** để lại event override, chỉ ở seed 33) hỏng đúng E-002, E-101, E-102 như swarm. Chỉ khác là swarm hỏng ở seed 55, nên mọi trung bình, pass^5 và CI đều bằng hệt baseline, và gate chỉ dựa trên trung bình sẽ merge.
+  - Quy tắc này chỉ hợp lệ khi A/A = 0. Với LLM thật phải chạy lặp lại mỗi trial trước khi coi là lỗi mới.
+  - Đã kiểm: `fixed`, `honest_refactor`, chỉ paraphrase, chỉ extra_lookup và baseline so với chính nó đều vẫn merge.
+
+## Giới hạn cỡ mẫu (v2)
+- **Bug chỉ xuất hiện ở 1/3 seed (`rare`: seed chia hết cho 3) không phát hiện ổn định với 5 seed.** Với seeds 11/22/33/44/55 nó chỉ bật ở seed 33. Đổi sang một bộ 5 seed khác, có thể không seed nào chia hết cho 3, khi đó bug **không hiện ra lần nào** và mọi metric bằng baseline. Xác suất bỏ sót một bug xảy ra với tần suất p trong n lần chạy là (1−p)^n: p = 1/3, n = 5 cho 0.13, tức khoảng 1 lần trong 8 lần chạy gate sẽ không thấy bug. Muốn bỏ sót < 1% cần n ≥ 12 seed. Mình **không hạ ngưỡng** để "bắt" nó trên bộ seed hiện tại; cần tăng số seed trong eval set v3.
+- 28 item: CI của slice vẫn rộng (adversarial n=14: [−0.186, +0.057]). Slice gate ở đây chặn chủ yếu nhờ sàn chứ không nhờ CI.
+- FM-09 chưa có variant nào tạo ra lỗi thật; slice `escalation` mới chỉ được kiểm ở phía không báo nhầm.
