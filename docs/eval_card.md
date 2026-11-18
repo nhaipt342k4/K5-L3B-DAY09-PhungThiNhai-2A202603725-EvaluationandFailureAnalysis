@@ -115,3 +115,25 @@ Scorecard `python -m lab9.mutation --spec config/metric_spec_v2.yaml --baseline 
 - **Bug chỉ xuất hiện ở 1/3 seed (`rare`: seed chia hết cho 3) không phát hiện ổn định với 5 seed.** Với seeds 11/22/33/44/55 nó chỉ bật ở seed 33. Đổi sang một bộ 5 seed khác, có thể không seed nào chia hết cho 3, khi đó bug **không hiện ra lần nào** và mọi metric bằng baseline. Xác suất bỏ sót một bug xảy ra với tần suất p trong n lần chạy là (1−p)^n: p = 1/3, n = 5 cho 0.13, tức khoảng 1 lần trong 8 lần chạy gate sẽ không thấy bug. Muốn bỏ sót < 1% cần n ≥ 12 seed. Mình **không hạ ngưỡng** để "bắt" nó trên bộ seed hiện tại; cần tăng số seed trong eval set v3.
 - 28 item: CI của slice vẫn rộng (adversarial n=14: [−0.186, +0.057]). Slice gate ở đây chặn chủ yếu nhờ sàn chứ không nhờ CI.
 - FM-09 chưa có variant nào tạo ra lỗi thật; slice `escalation` mới chỉ được kiểm ở phía không báo nhầm.
+
+# v2 (Expert: M7): gate chống gian lận eval
+
+`lab9.gate.integrity_check` chạy **trước** mọi so sánh ngưỡng. Report hoặc spec nào không tin được thì gate trả `exit 1 — blocked: integrity` và ghi rõ từng vấn đề.
+
+| Kiểm tra | Bắt được |
+|---|---|
+| metric NaN/inf; giá trị một dòng của metric có grader không phải bool (None, thiếu, số) | `evaluator_errors_as_nan` (grader crash, dòng rớt khỏi trung bình) |
+| `evaluator_failures` khác rỗng, kể cả khi run vẫn xanh | grader hỏng âm thầm |
+| số dòng ≠ items × seeds; dòng (item, seed) trùng lặp; seed lạ; số item khác manifest | `dropped_failing_rows`; dòng fail bị thay bằng bản sao dòng pass |
+| tập (item, seed) khác baseline; seeds khác baseline/spec | `cherry_picked_seeds`, bỏ item khó |
+| metric tổng không khớp với số tính lại từ các dòng (`lab9.eval.aggregate`) | report sửa tay hoặc report cũ |
+| `eval_set_sha` khác file eval set mà spec trỏ tới; item khác eval set | report của eval set khác |
+| slice tag của item khác baseline, khác file eval set, hoặc khác nhau giữa các seed | đổi nhãn để kéo item ra khỏi slice `money_movement` |
+| **ratchet** (khi có `--base-spec`): `min` giảm, `max`/`max_increase` tăng, bỏ `no_significant_drop`/`no_new_failures`, metric hoặc slice bị xoá, blocking thành non-blocking, bớt seed, tăng `confidence` bootstrap, đổi đường dẫn eval set/labels/pack. Ratchet áp dụng **kể cả khi đổi tên `eval_set_version`**, vì gate đã buộc cùng `eval_set_sha` | `loosened_spec` |
+
+**Kết quả:**
+- `python -m lab9.traps --pr reports/eval_slice_regression.json --baseline reports/baseline_v2.json --spec config/metric_spec_v2.yaml` cho exit 0: **4/4 trap bị chặn**, đều do INTEGRITY hoặc ratchet.
+- Trên report thật, mình thử thêm: dòng trùng thay cho dòng fail, kéo E-014/E-105/E-106 ra khỏi `money_movement`, sửa tay `proposal_amount_correct`, và `evaluator_failures` trên run xanh. Cả 4 đều bị chặn. Test ở `src/tests/test_lab9_advanced_integrity.py`.
+- Không báo nhầm: baseline v2 so với chính nó (`--base-spec` = chính spec đó) merge; gate v1 cho kết quả như cũ (`fixed` merge, `seeded_regression` chặn ở `pass_rate`); scorecard 3/3, 0 báo nhầm.
+
+**Trap còn lọt được (giới hạn).** Nếu người viết PR lật mọi dòng fail thành pass **rồi tính lại metric cho khớp**, report hoàn toàn tự nhất quán và `integrity_check` không thể phân biệt được (đã thử, lọt). Chỉ từ một file report thì không ai chứng minh được report đó là thật. Cách chống: CI **tự chạy lại** `lab9.eval` trên code của PR thay vì tin report đi kèm PR (job `eval-gate` đã làm vậy với `swarm`), và baseline chỉ được sinh trên nhánh `main` được bảo vệ, sau đó `lab9.ci_check` đối chiếu baseline với lần chạy của chính CI. Ratchet cũng cần `--base-spec` lấy từ `main`: không có spec gốc thì gate không biết spec của PR đã bị nới.
