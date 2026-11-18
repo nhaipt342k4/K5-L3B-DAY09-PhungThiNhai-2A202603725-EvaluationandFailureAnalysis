@@ -1,0 +1,4 @@
+# Eval-set bytes feed eval_set_sha: keep LF on every OS (core.autocrlf=true would make the
+# Windows SHA differ from CI on Linux and the gate would refuse the baseline).
+src/data/eval/*.jsonl text eol=lf
+src/data/eval/*.json text eol=lf
